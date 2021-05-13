@@ -8,7 +8,7 @@
 // @match       https://jira./*
 // @icon        https://www.google.com/s2/favicons?domain=jira.atlassian.com
 // @grant       none
-// @require     https://cdn.jsdelivr.net/gh/cherub-i/jira-ticket-copier@main/context-menu.js
+// @require     https://raw.githubusercontent.com/cherub-i/jira-ticket-copier/main/context-menu.js
 // ==/UserScript==
 
 (function() {
