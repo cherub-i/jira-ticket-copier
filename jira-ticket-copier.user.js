@@ -177,6 +177,7 @@
             }
         }
     }
+    
     class ActionsMenu {
         static class = 'actions-menu';
         static idAttribute = 'data-am-key';
@@ -193,7 +194,6 @@
             this.actionsMenu.setAttribute(ActionsMenu.idAttribute, id);
             
             this.actionsMenu.className = ActionsMenu.class
-            this.actionsMenu.id = 'am-' + id;
         }
         
         get element() {
