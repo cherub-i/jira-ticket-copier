@@ -14,7 +14,8 @@
 (function() {
     'use strict';
 
-    //---- configuration start ----
+    //---- configuration start -----------------------------------------
+    //
     let rescanIntervalSecs = 3;     // interval for checking the page for new ticket links
     let jiraLinkTypesToCheck = [    // types of links to add the menu to, comment out types you do not want
         'issue-detail/header',
@@ -27,13 +28,15 @@
         'issue-board/card',
         'issue-board/detail',
     ];
+    let printConsoleInfo = true;
 
     // textual representation
-    let ticketAsText = function(key, summary) { return key + " " + summary; };
+    let ticketAsText = function(key, summary) { return key + ' ' + summary; };
     
     // link representation
     let ticketAsLink = function(key, summary, url) { return '<a href="' + url + '">' + key + ' ' + summary + '</a>'; };
-    //---- configuration end ------
+    //
+    //---- configuration end -------------------------------------------
 
     class TicketData {
         constructor(issueKey, issueUrl, issueSummary) {
@@ -140,9 +143,9 @@
         // TODO: 'issue-board/epic-pane' // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
         
 
-        constructor(rootElement, foundElements) {
+        constructor(rootElement, ticketData) {
             this.rootElement = rootElement;
-            this.foundElements = foundElements;
+            this.ticketData = ticketData;
         }
 
         processAllTypes() {
@@ -158,8 +161,8 @@
 
             for (let i = 0; i < elementList.length; i++) {
                 let id = typeToLookFor.id(elementList[i])
-                if (!(id in this.foundElements)) {
-                    this.foundElements[id] = new TicketData(
+                if (!(id in this.ticketData)) {
+                    this.ticketData[id] = new TicketData(
                         typeToLookFor.issueKey(elementList[i]),
                         typeToLookFor.issueURL(elementList[i]),
                         typeToLookFor.issueSummary(elementList[i]),
@@ -170,16 +173,13 @@
                 if (menuParentElement.querySelectorAll('.' + ActionsMenu.class).length == 0) {
                     let actionsMenu = new ActionsMenu(id);
                     actionsMenu.attach(menuParentElement, typeToLookFor.menuBeforeElement(elementList[i]));
-                    actionsMenu.populateMenu([
-                        { name: 'Als Link kopieren', fn: function() { copyToClip(foundElements[id].link); }},
-                        { name: 'Als Text kopieren', fn: function() { copyToClip(foundElements[id].text); }},
-                    ]);
                 }
             }
         }
     }
     class ActionsMenu {
-        static class = "actions-menu"
+        static class = 'actions-menu';
+        static idAttribute = 'data-am-key';
         
         constructor(id) {
             this.actionsMenu = document.createElement('button');
@@ -190,9 +190,10 @@
             this.actionsMenu.style.width = '13px';
             this.actionsMenu.style.borderRadius = '50%';
             this.actionsMenu.style.backgroundColor = 'magenta'; // oder gelb? #FFE500
+            this.actionsMenu.setAttribute(ActionsMenu.idAttribute, id);
             
             this.actionsMenu.className = ActionsMenu.class
-            this.actionsMenu.id = "am-" + id;
+            this.actionsMenu.id = 'am-' + id;
         }
         
         get element() {
@@ -203,8 +204,8 @@
             parentElement.insertBefore(this.element, beforeElement);
         }
         
-        populateMenu(items) {
-            this.menu = new ContextMenu("#" + this.actionsMenu.id, items);
+        static initMenus(items) {
+            this.menu = new ContextMenu('.' + ActionsMenu.class, items);
         }
     }
     
@@ -212,15 +213,17 @@
         // https://stackoverflow.com/questions/23934656/javascript-copy-rich-text-contents-to-clipboard
         
         function listener(e) {
-            e.clipboardData.setData("text/html", str);
-            e.clipboardData.setData("text/plain", str);
+            e.clipboardData.setData('text/html', str);
+            e.clipboardData.setData('text/plain', str);
             e.preventDefault();
         }
-        document.addEventListener("copy", listener);
-        document.execCommand("copy");
-        document.removeEventListener("copy", listener);
+        document.addEventListener('copy', listener);
+        document.execCommand('copy');
+        document.removeEventListener('copy', listener);
         
-        console.log(consoleLogPrefix + 'INFO | copied to clipboard: ' + str);
+        if (printConsoleInfo) {
+            console.log(consoleLogPrefix + 'INFO | copied to clipboard: ' + str);
+        }
     }
 
     function worker() {
@@ -229,6 +232,12 @@
             for (let type of jiraLinkTypesToCheck) {
                 ticketGatherer.processType(type);
             }
+
+            ActionsMenu.initMenus([
+                { name: 'Als Link kopieren', fn: function(target) { copyToClip(ticketData[target.getAttribute(ActionsMenu.idAttribute)].link); }},
+                { name: 'Als Text kopieren', fn: function(target) { copyToClip(ticketData[target.getAttribute(ActionsMenu.idAttribute)].text); }},
+           ]);
+
         } catch (e) {
             // eslint-disable-next-line no-console
             console.log(consoleLogPrefix + 'ERROR | unknown exception: ' + e);
@@ -236,8 +245,8 @@
     }
     
     let consoleLogPrefix = 'JIRA Ticket Copier | ';
-    let foundElements = {};
-    let ticketGatherer = new TicketGatherer(document, foundElements);
+    let ticketData = {};
+    let ticketGatherer = new TicketGatherer(document, ticketData);
     
     // continuously scan for new links
     setInterval(worker, rescanIntervalSecs*1000);
