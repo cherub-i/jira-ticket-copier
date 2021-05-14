@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Jira Ticket Copier
 // @namespace   https://github.com/cherub-i/jira-ticket-copier
-// @version     0.1
+// @version     0.2
 // @description Use a right-click context menu to copy the Ticket-Key ("Id") and Ticket-Summary ("Title") either as a link or as text only for any ticket that appears on a JIRA page.
 // @author      code@bastianbaumeister.de
 // @match       https://*/jira/*
@@ -14,137 +14,203 @@
 (function() {
     'use strict';
 
-    class TicketInfo {
-        constructor(element) {
-            this.ready = false;
-            this.id = "";
-            this.issueUrl = "";
-            this.issueKey = "";
-            this.issueSummary = "";
-            this.linkText = "";
+    //---- configuration start ----
+    let rescanIntervalSecs = 3;     // interval for checking the page for new ticket links
+    let jiraLinkTypesToCheck = [    // types of links to add the menu to, comment out types you do not want
+        'issue-detail/header',
+        'issue-detail/subticket-header',
+        'issue-detail/description',
+        'issue-detail/comment',
+        'issue-detail/linked-issues', 
+        'issue-list/list-view',
+        'issue-list/detail-view',
+        'issue-board/card',
+        'issue-board/detail',
+    ];
 
-            this.loadFromElement(element);
-        }
+    // textual representation
+    let ticketAsText = function(key, summary) { return key + " " + summary; };
+    
+    // link representation
+    let ticketAsLink = function(key, summary, url) { return '<a href="' + url + '">' + key + ' ' + summary + '</a>'; };
+    //---- configuration end ------
 
-        loadFromElement(element) {
-            let found = false;
-            
-            if (element.className.search("issue-link") > -1) {
-                if (element.parentNode.nodeName == "LI") {
-                    // selector.push("a#key-val");                             
-                    // issue detail / header https://JIRA_SERVER/browse/TICKET-485
-                    //
-                    // selector.push("a#parent_issue_summary");                
-                    // issue detail / subticket header https://JIRA_SERVER/browse/TICKET-484
-                    //
-                    found = true;
-                    this.issueUrl = element.href;
-                    this.issueKey = element.innerText;
-                    this.issueSummary = element.parentNode.parentNode.parentNode.childNodes[1].innerText;
-                } else if (element.parentNode.nodeName == "P") {
-                    // selector.push("div.user-content-block a.issue-link");   
-                    // issue detail / desciption https://JIRA_SERVER/browse/TICKET-485
-                    //
-                    // selector.push("div.action-body a.issue-link");          
-                    // issue detail / comment https://JIRA_SERVER/browse/TICKET-485
-                    //
-                    found = true;
-                    this.issueUrl = element.href;
-                    this.issueKey = element.innerText;
-                    this.issueSummary = element.title;
-                } else if (element.parentNode.nodeName == "SPAN") {
-                    // selector.push("div.link-content a.issue-link");         
-                    // issue detail / linked issues https://JIRA_SERVER/browse/TICKET-485
-                    //
-                    found = true;
-                    this.issueUrl = element.href;
-                    this.issueKey = element.innerText;
-                    this.issueSummary = element.parentNode.innerText;
-                } else if (element.parentNode.nodeName == "TD") {
-                    // selector.push("td.issuekey>a.issue-link:not(.hidden-link)");              
-                    // issue list https://JIRA_SERVER/issues/?filter=-2
-                    //
-                    found = true;
-                    this.issueUrl = element.href;
-                    this.issueKey = element.innerText;
-                    this.issueSummary = element.parentNode.parentNode.querySelector("td.summary").innerText;
-                }
-            } else if (element.className.search("js-key-link") > -1) {
-                if (element.parentNode.nodeName == "DIV") {
-                    // selector.push("a.js-key-link");                         
-                    // issue board / cards https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-                    //
-                    found = true;
-                    this.issueUrl = element.href;
-                    this.issueKey = element.innerText;
-                    this.issueSummary = element.parentNode.parentNode.childNodes[1].innerText;
-                }
-            } else if (element.id == "issuekey-val") {
-                // selector.push("#issuekey-val");                         
-                // issue board / detail pane / header https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-                //
-                found = true;
-                this.issueUrl = element.childNodes[0].href;
-                this.issueKey = element.childNodes[0].innerText;
-                this.issueSummary = element.parentNode.parentNode.parentNode.parentNode.parentNode.childNodes[1].innerText;
-            }
-
-            // selector.push("a.js-epic-key-link");                    // issue board / epic pane https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-            if (found) {
-                this.id = this.issueUrl.substr(this.issueUrl.lastIndexOf("/")+1);
-                if (isJiraIssueKey(this.id)) {
-                    this.ready = true;
-                } else {
-                    console.log("ERROR | JIRA ticket copier | link element found with invalid issues key in URL: " + element)
-                }
-            } else {
-                console.log("ERROR | JIRA ticket copier | link element found but in unsupported context: " + element)
-            }
+    class TicketData {
+        constructor(issueKey, issueUrl, issueSummary) {
+            this.issueKey = issueKey;
+            this.issueUrl = issueUrl;
+            this.issueSummary = issueSummary;
         }
 
         get link() {
-            let link = "<a href='" + this.issueUrl + "'>" + this.issueKey + " " + this.issueSummary + "</a>";
-            return link;
+            return ticketAsLink(this.issueKey, this.issueSummary, this.issueUrl);
         }
-
+        
         get text() {
-            let text = this.issueKey + " " + this.issueSummary;
-            return text;
+            return ticketAsText(this.issueKey, this.issueSummary);
         }
     }
 
+    class TicketGatherer {
+        static elementTypes = {
+            'issue-detail/header': { // e.g. https://JIRA_SERVER/browse/TICKET-485
+                'selector':             'a#key-val',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.parentNode.parentNode.parentNode.childNodes[1].innerText,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-detail/subticket-header': { // e.g. https://JIRA_SERVER/browse/TICKET-484
+                'selector':             'a#parent_issue_summary',
+                'id':                   element => element.attributes['data-issue-key'].value,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.attributes['data-issue-key'].value,
+                'issueSummary':         element => element.parentNode.parentNode.parentNode.childNodes[1].innerText,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-detail/description': { // e.g. https://JIRA_SERVER/browse/TICKET-485
+                'selector':             'div.user-content-block a.issue-link',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.title,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-detail/comment': { // e.g. https://JIRA_SERVER/browse/TICKET-485
+                'selector':             'div.action-body a.issue-link',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.title,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-detail/linked-issues': { // e.g. https://JIRA_SERVER/browse/TICKET-485
+                'selector':             'div.link-content a.issue-link',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.parentNode.querySelector('span.link-summary').innerText,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-list/list-view': { // e.g. https://JIRA_SERVER/issues/?filter=-2
+                'selector':             'td.issuekey>a.issue-link:not(.hidden-link)',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.parentNode.parentNode.querySelector('td.summary').innerText,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-list/detail-view': { // e.g. https://JIRA_SERVER/browse/TICKET-485?filter=-1
+                'selector':             'span.issue-link-key',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.parentNode.parentNode.parentNode.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.parentNode.parentNode.querySelector('span.issue-link-summary').innerText,
+                // TODO improve layout of menu placement
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-board/card': { // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
+                'selector':             'a.js-key-link',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.parentNode.parentNode.childNodes[1].innerText,
+                // TODO improve layout of menu placement
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-board/detail': { // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
+                'selector':             '#issuekey-val',
+                'id':                   element => element.childNodes[0].innerText,
+                'issueURL':             element => element.childNodes[0].href,
+                'issueKey':             element => element.childNodes[0].innerText,
+                'issueSummary':         element => element.parentNode.parentNode.parentNode.parentNode.parentNode.childNodes[1].innerText,
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+        };
+        // TODO: 'issue-board/epic-pane' // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
+        
+
+        constructor(rootElement, foundElements) {
+            this.rootElement = rootElement;
+            this.foundElements = foundElements;
+        }
+
+        processAllTypes() {
+            for(let type in TicketGatherer.elementTypes) {
+                this.processType(type);
+            }
+        }
+
+        processType(type) {
+            // TODO maybe proof against type not existing
+            let typeToLookFor = TicketGatherer.elementTypes[type];
+            let elementList = this.rootElement.querySelectorAll(typeToLookFor.selector);
+
+            for (let i = 0; i < elementList.length; i++) {
+                let id = typeToLookFor.id(elementList[i])
+                if (!(id in this.foundElements)) {
+                    this.foundElements[id] = new TicketData(
+                        typeToLookFor.issueKey(elementList[i]),
+                        typeToLookFor.issueURL(elementList[i]),
+                        typeToLookFor.issueSummary(elementList[i]),
+                    );
+                }
+
+                let menuParentElement = typeToLookFor.menuParentElement(elementList[i])
+                if (menuParentElement.querySelectorAll('.' + ActionsMenu.class).length == 0) {
+                    let actionsMenu = new ActionsMenu(id);
+                    actionsMenu.attach(menuParentElement, typeToLookFor.menuBeforeElement(elementList[i]));
+                    actionsMenu.populateMenu([
+                        { name: 'Als Link kopieren', fn: function() { copyToClip(foundElements[id].link); }},
+                        { name: 'Als Text kopieren', fn: function() { copyToClip(foundElements[id].text); }},
+                    ]);
+                }
+            }
+        }
+    }
     class ActionsMenu {
+        static class = "actions-menu"
+        
         constructor(id) {
             this.actionsMenu = document.createElement('button');
-
+            
             this.actionsMenu.style.border = 'none';
             this.actionsMenu.style.marginLeft = '.3rem'; 
             this.actionsMenu.style.height = '13px';
             this.actionsMenu.style.width = '13px';
             this.actionsMenu.style.borderRadius = '50%';
             this.actionsMenu.style.backgroundColor = 'magenta'; // oder gelb? #FFE500
-
-            this.actionsMenu.className = "actions-menu"
+            
+            this.actionsMenu.className = ActionsMenu.class
             this.actionsMenu.id = "am-" + id;
         }
-
+        
         get element() {
             return this.actionsMenu
         }
-
-        initMenu(items) {
+        
+        attach(parentElement, beforeElement) {
+            parentElement.insertBefore(this.element, beforeElement);
+        }
+        
+        populateMenu(items) {
             this.menu = new ContextMenu("#" + this.actionsMenu.id, items);
         }
     }
     
-    function isJiraIssueKey(issueKey) {
-        let jiraMatcher = /((?!([A-Z0-9a-z]{1,10})-?$)[A-Z]{1}[A-Z0-9]+-\d+)/g;
-        return issueKey.match(jiraMatcher) !== null;
-    }
-
     function copyToClip(str) {
         // https://stackoverflow.com/questions/23934656/javascript-copy-rich-text-contents-to-clipboard
-
+        
         function listener(e) {
             e.clipboardData.setData("text/html", str);
             e.clipboardData.setData("text/plain", str);
@@ -153,52 +219,26 @@
         document.addEventListener("copy", listener);
         document.execCommand("copy");
         document.removeEventListener("copy", listener);
-    };
-
-    function gatherTicketLinks() {
-        // let selector = "a.issue-link,a.js-key-link,#issuekey-val"
-        let selector = [];
-        selector.push("a#key-val");                             // issue detail / header https://JIRA_SERVER/browse/TICKET-485
-        selector.push("a#parent_issue_summary");                // issue detail / subticket header https://JIRA_SERVER/browse/TICKET-484
-        selector.push("div.user-content-block a.issue-link");   // issue detail / desciption https://JIRA_SERVER/browse/TICKET-485
-        selector.push("div.action-body a.issue-link");          // issue detail / comment https://JIRA_SERVER/browse/TICKET-485
-        selector.push("div.link-content a.issue-link");         // issue detail / linked issues https://JIRA_SERVER/browse/TICKET-485
-        selector.push("td.issuekey>a.issue-link:not(.hidden-link)");              // issue list https://JIRA_SERVER/issues/?filter=-2
-        selector.push("a.js-key-link");                         // issue board / cards https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-        selector.push("#issuekey-val");                         // issue board / detail pane https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-        selector.push("a.js-epic-key-link");                    // issue board / epic pane https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-        const idElements = document.querySelectorAll(selector.join(","));
-        for (let i = 0; i < idElements.length; i += 1) {
-            let ticketInfo = new TicketInfo(idElements[i]);
-            
-            if (ticketInfo.ready && idElements[i].parentNode.querySelectorAll(".actions-menu").length == 0) {
-                let aMenu = new ActionsMenu(ticketInfo.id);
-                
-                idElements[i].parentNode.insertBefore(aMenu.element, idElements[i].nextSibling);
-
-                let items = [
-                    { name: 'Als Link kopieren', fn: function() { copyToClip(ticketInfo.link); }},
-                    { name: 'Als Text kopieren', fn: function() { copyToClip(ticketInfo.text); }},
-                ];
-                aMenu.initMenu(items)
-            }
-        }
+        
+        console.log(consoleLogPrefix + 'INFO | copied to clipboard: ' + str);
     }
 
     function worker() {
         try {
-            gatherTicketLinks();
+            // ticketGatherer.processAllTypes();
+            for (let type of jiraLinkTypesToCheck) {
+                ticketGatherer.processType(type);
+            }
         } catch (e) {
             // eslint-disable-next-line no-console
-            console.log("ERROR | JIRA ticket copier | unknown exception: " + e);
+            console.log(consoleLogPrefix + 'ERROR | unknown exception: ' + e);
         }
     }
-
-    // // load CSS
-    // const my_css = GM_getResourceText("IMPORTED_CSS");
-    // GM_addStyle(my_css);
-
+    
+    let consoleLogPrefix = 'JIRA Ticket Copier | ';
+    let foundElements = {};
+    let ticketGatherer = new TicketGatherer(document, foundElements);
+    
     // continuously scan for new links
-    setInterval(worker, 3*1000);
-
+    setInterval(worker, rescanIntervalSecs*1000);
 })();
