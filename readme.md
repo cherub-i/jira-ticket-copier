@@ -27,9 +27,15 @@ When you view a webpage from a JIRA server, every mentioning of a JIRA ticket on
 Once you have the script installed in Tampermonkey, you can go to the editor-view for that script. At the top of the code you will find a block named "configuration". That's where you can do a bit of customization to your needs.
 
 ## Version History
+
+### 0.5
+* fixed bug: no summary found for issue board view as list
+* split up detection for "issue-board/card" into "issue-board/card-view" and "issue-board/list-view"
+
 ### 0.4
 * fixed bug: menu was generated indefinitely often - when just one is enough
 * fixed bug: on Firefox, menu text was picked up by JIRA comment fields
+
 ### 0.3 
 * fixed bug: individual configuration was not possible
 

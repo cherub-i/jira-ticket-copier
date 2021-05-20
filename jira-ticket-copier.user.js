@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Jira Ticket Copier
 // @description Use a right-click context menu to copy the Ticket-Key ("Id") and Ticket-Summary ("Title") either as a link or as text only for any ticket that appears on a JIRA page.
-// @version     0.4
+// @version     0.5
 // @author      code@bastianbaumeister.de
 //
 // @updateURL   https://raw.githubusercontent.com/cherub-i/jira-ticket-copier/main/jira-ticket-copier.user.js
@@ -29,7 +29,8 @@
         'issue-detail/linked-issues', 
         'issue-list/list-view',
         'issue-list/detail-view',
-        //'issue-board/card',
+        'issue-board/card-view',
+        'issue-board/list-view',
         'issue-board/detail',
     ];
     let printConsoleInfo = true;
@@ -124,13 +125,22 @@
                 'menuParentElement':    element => element.parentNode,
                 'menuBeforeElement':    element => element.nextSibling,
             },
-            'issue-board/card': { // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
-                'selector':             'a.js-key-link',
+            'issue-board/card-view': { // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
+                'selector':             'div.ghx-issue-fields a.js-key-link',
                 'id':                   element => element.innerText,
                 'issueURL':             element => element.href,
                 'issueKey':             element => element.innerText,
                 'issueSummary':         element => element.parentNode.parentNode.childNodes[1].innerText,
                 // TODO improve layout of menu placement
+                'menuParentElement':    element => element.parentNode,
+                'menuBeforeElement':    element => element.nextSibling,
+            },
+            'issue-board/list-view': { // e.g. https://JIRA_SERVER/secure/RapidBoard.jspa?rapidView=6294&view=detail&selectedIssue=TICKET-484&quickFilter=30822
+                'selector':             'div.ghx-row a.js-key-link',
+                'id':                   element => element.innerText,
+                'issueURL':             element => element.href,
+                'issueKey':             element => element.innerText,
+                'issueSummary':         element => element.parentNode.parentNode.querySelector('div.ghx-summary').innerText,
                 'menuParentElement':    element => element.parentNode,
                 'menuBeforeElement':    element => element.nextSibling,
             },
@@ -174,6 +184,7 @@
                 }
 
                 let menuParentElement = typeToLookFor.menuParentElement(elementList[i])
+                // TODO: bei zwei Ticket-IDs in einem LI in einem Comment bekommt das zweite wegen der folgenden Prüfung kein Menu-Element. Im querySeletor oder danach noch auf data-issue-key = Ticket ID prüfen? Nicht querySelectorAll sondern nur einen Suchen und darauf rpüfen.
                 if (menuParentElement.querySelectorAll('.' + ActionsMenu.class).length == 0) {
                     let actionsMenu = new ActionsMenu(id);
                     actionsMenu.attach(menuParentElement, typeToLookFor.menuBeforeElement(elementList[i]));
