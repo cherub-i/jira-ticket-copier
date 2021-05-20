@@ -1,10 +1,9 @@
 // ==UserScript==
 // @name        Jira Ticket Copier
 // @description Use a right-click context menu to copy the Ticket-Key ("Id") and Ticket-Summary ("Title") either as a link or as text only for any ticket that appears on a JIRA page.
-// @version     0.3
+// @version     0.4
 // @author      code@bastianbaumeister.de
 //
-// @downloadURL https://raw.githubusercontent.com/cherub-i/jira-ticket-copier/main/jira-ticket-copier.user.js
 // @updateURL   https://raw.githubusercontent.com/cherub-i/jira-ticket-copier/main/jira-ticket-copier.user.js
 // @namespace   https://github.com/cherub-i/jira-ticket-copier
 // @icon        https://www.google.com/s2/favicons?domain=jira.atlassian.com
@@ -238,10 +237,13 @@
                 ticketGatherer.processType(type);
             }
 
-            ActionsMenu.initMenus([
-                { name: 'Als Link kopieren', fn: function(target) { copyToClip(ticketData[target.getAttribute(ActionsMenu.idAttribute)].link); }},
-                { name: 'Als Text kopieren', fn: function(target) { copyToClip(ticketData[target.getAttribute(ActionsMenu.idAttribute)].text); }},
-           ]);
+            if (Object.keys(ticketData).length > 0 && !menuInitialized) {
+                ActionsMenu.initMenus([
+                    { name: 'Als Link kopieren', fn: function(target) { copyToClip(ticketData[target.getAttribute(ActionsMenu.idAttribute)].link); }},
+                    { name: 'Als Text kopieren', fn: function(target) { copyToClip(ticketData[target.getAttribute(ActionsMenu.idAttribute)].text); }},
+                ]);
+                menuInitialized = true;
+            }
 
         } catch (e) {
             // eslint-disable-next-line no-console
@@ -253,6 +255,7 @@
     let ticketData = {};
     let ticketGatherer = new TicketGatherer(document, ticketData);
     
+    let menuInitialized = false;
     // continuously scan for new links
     setInterval(worker, rescanIntervalSecs*1000);
 })();
