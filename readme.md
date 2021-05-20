@@ -5,6 +5,22 @@
 1. [Install Tampermonkey](https://www.tampermonkey.net/)
 2. open the JIRA Ticket Copier script file [`jira-ticket-copier.user.js`](https://github.com/cherub-i/jira-ticket-copier/raw/main/jira-ticket-copier.user.js)
 
+### Updates
+If you want to, you can enable Tampermonkey to look for updates for this script:
+
+1. on the Tampermonkey Overview page
+2. from the "Installed Userscripts" tab, open the "JIRA Ticket Copier"
+3. under "Settings", enable "Search for Updates"
+4. click "Save"
+
+In order to manually pull an update:
+
+1. on the Tampermonkey Overview page
+2. from the "Installed Userscripts" tab, open the "JIRA Ticket Copier"
+3. under "Editor", use the menu item "Files" / "Look for updates"
+
+If that option is greyed out, you need to enable "Search for Updates" first (and maybe do a reload of the page).
+
 ## What it does
 When you view a webpage from a JIRA server, every mentioning of a JIRA ticket on that page is adorned with magenta dot. Right-clicking on that element allows you to copy the information for that ticket to your clipboard - either as text or as a link.
 
