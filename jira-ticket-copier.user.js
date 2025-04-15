@@ -66,7 +66,7 @@
                 'id':                   element => element.innerText,
                 'issueURL':             element => element.href,
                 'issueKey':             element => element.innerText,
-                'issueSummary':         element => element.parentNode.parentNode.parentNode.childNodes[1].innerText,
+                'issueSummary':         element => element.parentNode.parentNode.parentNode.parentNode.childNodes[1].innerText,
                 'menuParentElement':    element => element.parentNode,
                 'menuBeforeElement':    element => element.nextSibling,
             },
